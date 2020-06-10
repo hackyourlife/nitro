@@ -39,6 +39,20 @@ suite = {
       "license" : "GPLv3",
     },
 
+    "org.graalvm.vm.trcview.arch.arm.test" : {
+      "subDir" : "projects",
+      "sourceDirs" : ["src"],
+      "dependencies" : [
+        "org.graalvm.vm.trcview.arch.arm",
+        "vmx86:VMX86_TRCVIEW",
+        "mx:JUNIT",
+      ],
+      "javaCompliance" : "1.8+",
+      "workingSets" : "vmx86",
+      "testProject" : "True",
+      "license" : "GPLv3",
+    },
+
   },
 
   "distributions" : {
@@ -48,6 +62,22 @@ suite = {
       "subDir" : "nitro",
       "dependencies" : [
         "org.graalvm.vm.trcview.arch.arm",
+      ],
+      "distDependencies" : [
+        "vmx86:VMX86_TRCVIEW",
+      ],
+      "license" : "GPLv3",
+    },
+
+    "TRCVIEW_ARM_PLUGIN_TEST" : {
+      "path" : "build/nitro_test.jar",
+      "sourcesPath" : "build/nitro_test.src.zip",
+      "subDir" : "nitro",
+      "dependencies" : [
+        "org.graalvm.vm.trcview.arch.arm.test",
+      ],
+      "exclude" : [
+        "mx:JUNIT"
       ],
       "distDependencies" : [
         "vmx86:VMX86_TRCVIEW",
