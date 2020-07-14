@@ -54,7 +54,7 @@ public class ARMCallDecoder extends CallDecoder {
 					retval = 0;
 				}
 			} else {
-				retval = nextState.getGPR(3);
+				retval = nextState.getGPR(0);
 			}
 			retval = retval & 0xFFFFFFFFL; // truncate to 32bit
 			String s = str(prototype.returnType, retval, nextState, trc);
