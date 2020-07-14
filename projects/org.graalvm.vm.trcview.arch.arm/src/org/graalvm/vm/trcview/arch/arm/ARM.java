@@ -16,7 +16,7 @@ import org.graalvm.vm.trcview.decode.SyscallDecoder;
 
 public class ARM extends Architecture {
 	public static final short ID = Elf.EM_ARM;
-	public static final StepFormat FORMAT = new StepFormat(StepFormat.NUMBERFMT_HEX, 8, 8, 1, true);
+	public static final StepFormat FORMAT = new StepFormat(StepFormat.NUMBERFMT_HEX, 8, 8, 1, false);
 
 	private static final SyscallDecoder syscallDecoder = new ARMSyscallDecoder();
 	private static final CallDecoder callDecoder = new ARMCallDecoder();
@@ -74,7 +74,7 @@ public class ARM extends Architecture {
 
 	@Override
 	public boolean isStackedTraps() {
-		return true;
+		return false;
 	}
 
 	@Override
