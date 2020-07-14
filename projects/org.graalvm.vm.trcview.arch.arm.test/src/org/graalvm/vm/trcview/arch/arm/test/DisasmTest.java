@@ -74,6 +74,11 @@ public class DisasmTest extends TestSupport {
 	}
 
 	@Test
+	public void branch3() {
+		disasm(0x20A0974, 0xFBFD8DBC, "BLX", "0x200406E");
+	}
+
+	@Test
 	public void msr1() {
 		disasm(0xE121F001, "MSR", "CPSR_c", "R1");
 	}
@@ -96,5 +101,15 @@ public class DisasmTest extends TestSupport {
 	@Test
 	public void loadstore1() {
 		disasm(0xE1D0C1B8, "LDRH", "R12", "[R0, #0x18]");
+	}
+
+	@Test
+	public void loadstore2() {
+		disasm(0xE9F17FFF, "LDMED", "R1!", "{R0-R12,SP,LR}^");
+	}
+
+	@Test
+	public void loadStore3() {
+		disasm(0xE9E07FFC, "STMFA", "R0!", "{R2-R12,SP,LR}^");
 	}
 }

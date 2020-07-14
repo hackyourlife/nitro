@@ -187,6 +187,47 @@ public class InstructionFormat implements Value {
 		}
 	}
 
+	public static class Thumb extends InstructionFormat {
+		public final Field opcode1513 = field(13, 15);
+		public final Field opcode1512 = field(12, 15);
+		public final Field opcode1511 = field(11, 15);
+		public final Field opcode1510 = field(10, 15);
+
+		public final Field opcode97 = field(7, 9);
+		public final Field opcode96 = field(6, 9);
+		public final Field opcode86 = field(6, 8);
+
+		public final Field cond = field(8, 11);
+
+		public final Field op_1 = field(9);
+		public final Field op_2 = field(9);
+
+		public final Field Rm = field(6, 8);
+		public final Field Rn = field(3, 5);
+		public final Field Rd = field(0, 2);
+		public final Field Rd10 = field(8, 10);
+
+		public final Field H1 = field(7);
+		public final Field H2 = field(6);
+
+		public final Field R = field(8);
+		public final Field register_list = field(0, 7);
+		public final Field offset_11 = sfield(0, 10);
+		public final Field offset_8 = sfield(0, 7);
+		public final Field immed_8 = field(0, 7);
+		public final Field immed_7 = field(0, 6);
+		public final Field immed_5 = field(6, 10);
+		public final Field immed_3 = field(6, 8);
+
+		public Thumb() {
+			super();
+		}
+
+		public Thumb(int value) {
+			super(value);
+		}
+	}
+
 	private int value;
 	private boolean novalue;
 

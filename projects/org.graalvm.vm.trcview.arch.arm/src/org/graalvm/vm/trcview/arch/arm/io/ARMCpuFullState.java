@@ -20,6 +20,16 @@ public class ARMCpuFullState extends ARMCpuState {
 		step = state.getStep();
 	}
 
+	protected ARMCpuFullState(ARMCpuState state, int tid) {
+		super(tid);
+		for(int i = 0; i < 16; i++) {
+			r[i] = state.getGPR(i);
+		}
+		cpsr = state.getCPSR();
+		code = state.getCode();
+		step = state.getStep();
+	}
+
 	@Override
 	public int getGPR(int reg) {
 		return r[reg];

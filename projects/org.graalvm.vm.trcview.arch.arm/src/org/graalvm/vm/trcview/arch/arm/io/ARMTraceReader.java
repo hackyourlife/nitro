@@ -3,14 +3,22 @@ package org.graalvm.vm.trcview.arch.arm.io;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.graalvm.vm.posix.api.mem.Mman;
+import org.graalvm.vm.trcview.arch.arm.device.ARMDevices;
+import org.graalvm.vm.trcview.arch.arm.disasm.ARMv5Disassembler;
+import org.graalvm.vm.trcview.arch.arm.disasm.Cpsr;
+import org.graalvm.vm.trcview.arch.arm.disasm.InstructionFormat.Thumb;
 import org.graalvm.vm.trcview.arch.io.ArchTraceReader;
 import org.graalvm.vm.trcview.arch.io.Event;
+import org.graalvm.vm.trcview.arch.io.InstructionType;
 import org.graalvm.vm.trcview.arch.io.MemoryDumpEvent;
 import org.graalvm.vm.trcview.arch.io.MemoryEvent;
 import org.graalvm.vm.trcview.arch.io.MmapEvent;
 import org.graalvm.vm.trcview.net.protocol.IO;
+import org.graalvm.vm.util.BitTest;
 import org.graalvm.vm.util.HexFormatter;
 import org.graalvm.vm.util.io.LEInputStream;
 import org.graalvm.vm.util.io.WordInputStream;
@@ -29,11 +37,22 @@ public class ARMTraceReader extends ArchTraceReader {
 
 	private static final int STEP_LIMIT = 5_000;
 
+	private final Thumb thumb = new Thumb();
+
 	private final WordInputStream in;
 	private ARMStepEvent lastStep;
 	private ARMCpuState lastState = new ARMCpuZeroState(0);
+	private ARMContextSwitchEvent contextSwitch = null;
+	private boolean contextSwitchCommitted = false;
+	private MemoryEvent mem = null;
 	private long steps = 0;
 	private int init = 0;
+
+	private Map<Integer, Integer> threads = new HashMap<>();
+
+	private int tid = 0;
+	private int tidcnt = 1;
+	private ARMCpuState lastIRQState;
 
 	public ARMTraceReader(InputStream in) {
 		this.in = new LEInputStream(in);
@@ -60,13 +79,13 @@ public class ARMTraceReader extends ArchTraceReader {
 		switch(init) {
 		case 0:
 			init++;
-			return mmap(0x01000000, k(0x01000000, 32), "ITCM");
+			return mmap(0x01000000, meg(0x01000000, 32), "ITCM");
 		case 1:
 			init++;
 			return mmap(0x02000000, meg(0x02000000, 4), "Main Memory");
 		case 2:
 			init++;
-			return mmap(0x027C0000, k(0x027C0000, 16), "DTCM");
+			return mmap(0x027C0000, 0x027FFFFF, "DTCM");
 		case 3:
 			init++;
 			return mmap(0x027FF000, k(0x027FF000, 4), "Shared Work");
@@ -103,6 +122,22 @@ public class ARMTraceReader extends ArchTraceReader {
 		case 14:
 			init++;
 			return mmap(0xFFFF0000, k(0xFFFF0000, 32), "BIOS");
+		case 15:
+			init++;
+			return ARMDevices.createDevices();
+		}
+
+		if(contextSwitch != null && !contextSwitchCommitted) {
+			contextSwitchCommitted = true;
+			return contextSwitch;
+		}
+
+		if(mem != null) {
+			Event evt = ARMDevices.getEvent(mem);
+			mem = null;
+			if(evt != null) {
+				return evt;
+			}
 		}
 
 		byte type;
@@ -119,51 +154,114 @@ public class ARMTraceReader extends ArchTraceReader {
 				lastState = new ARMCpuFullState(lastState);
 				steps = 0;
 			}
-			lastStep = new ARMStepEvent(lastState);
+
+			// detect POP R2; BX R2 in ARM9 BIOS code and interpret it as return
+			if(lastStep != null && Cpsr.T.getBit(lastStep.getState().getCPSR()) &&
+					Cpsr.T.getBit(lastState.getCPSR())) {
+				// was in Thumb mode, and still is in Thumb mode
+				// now check if the last instruction was a POP and the current one is a BX
+				int code = lastState.getCode();
+				if((code & 0b1111111110000000) == 0b0100011100000000) {
+					// this is a BX, so let's get the register
+					int reg = thumb.Rn.get(code);
+					// now let's see if the previous instruction was a POP with this register
+					int lastCode = lastStep.getState().getCode();
+					if((lastCode & 0b1111111100000000) == 0b1011110000000000) {
+						// this was a POP without PC, now check the register
+						if(BitTest.test(lastCode, 1 << reg)) {
+							// yes, the register was POP'd
+							// override the instruction type to RET
+							lastStep = new ARMStepEvent(lastState, 1);
+							return lastStep;
+						}
+					}
+				}
+			}
+
+			// detect context switches
+			if(ARMContextSwitchEvent.isContextSwitch(lastState)) {
+				// ignore previous context switch; this is necessary for OS_RescheduleThreads followed
+				// by a reschedule IRQ
+				contextSwitch = new ARMContextSwitchEvent(0,
+						Cpsr.M.get(lastState.getCPSR()) == 0b10010);
+				contextSwitchCommitted = false;
+			} else if(ARMContextSwitchEvent.isContextSave(lastState)) {
+				// context save: store current thread ID for later matching
+				int thread = ARMContextSwitchEvent.getThreadID(lastState, lastIRQState);
+				threads.put(thread, tid);
+			} else if(contextSwitch != null && Cpsr.M.get(lastState.getCPSR()) != 0b10011 &&
+					Cpsr.M.get(lastState.getCPSR()) != 0b10010) {
+				// determine new thread id after context switch
+				int thread = ARMContextSwitchEvent.getThreadID(lastState);
+				if(threads.containsKey(thread)) {
+					tid = threads.get(thread);
+				} else {
+					tid = tidcnt++;
+					threads.put(thread, tid);
+				}
+				contextSwitch.setThreadID(tid);
+				contextSwitch.setThreadAddress(thread);
+				contextSwitch = null;
+			}
+
+			if(lastState.getTid() != tid) {
+				lastState = new ARMCpuFullState(lastState, tid);
+				if(ARMv5Disassembler.getType(lastState) == InstructionType.RET) {
+					// no RET after context switch
+					lastStep = new ARMStepEvent(lastState, 2);
+				} else {
+					lastStep = new ARMStepEvent(lastState);
+				}
+			} else {
+				lastStep = new ARMStepEvent(lastState);
+			}
 			return lastStep;
 		case TYPE_READ_8: {
 			long value = Integer.toUnsignedLong(in.read8bit());
 			long address = Integer.toUnsignedLong(in.read32bit());
 			byte size = 1;
-			return new MemoryEvent(false, 0, address, size, false, value);
+			return mem = new MemoryEvent(false, tid, address, size, false, value);
 		}
 		case TYPE_READ_16: {
 			long value = Integer.toUnsignedLong(in.read16bit());
 			long address = Integer.toUnsignedLong(in.read32bit());
 			byte size = 2;
-			return new MemoryEvent(false, 0, address, size, false, value);
+			return mem = new MemoryEvent(false, tid, address, size, false, value);
 		}
 		case TYPE_READ_32: {
 			long value = Integer.toUnsignedLong(in.read32bit());
 			long address = Integer.toUnsignedLong(in.read32bit());
 			byte size = 4;
-			return new MemoryEvent(false, 0, address, size, false, value);
+			return mem = new MemoryEvent(false, tid, address, size, false, value);
 		}
 		case TYPE_WRITE_8: {
 			long value = Integer.toUnsignedLong(in.read8bit());
 			long address = Integer.toUnsignedLong(in.read32bit());
 			byte size = 1;
-			return new MemoryEvent(false, 0, address, size, true, value);
+			return mem = new MemoryEvent(false, tid, address, size, true, value);
 		}
 		case TYPE_WRITE_16: {
 			long value = Integer.toUnsignedLong(in.read16bit());
 			long address = Integer.toUnsignedLong(in.read32bit());
 			byte size = 2;
-			return new MemoryEvent(false, 0, address, size, true, value);
+			return mem = new MemoryEvent(false, tid, address, size, true, value);
 		}
 		case TYPE_WRITE_32: {
 			long value = Integer.toUnsignedLong(in.read32bit());
 			long address = Integer.toUnsignedLong(in.read32bit());
 			byte size = 4;
-			return new MemoryEvent(false, 0, address, size, true, value);
+			return mem = new MemoryEvent(false, tid, address, size, true, value);
 		}
 		case TYPE_DUMP: {
 			long address = Integer.toUnsignedLong(in.read32bit());
 			byte[] data = IO.readArray(in);
-			return new MemoryDumpEvent(0, address, data);
+			return new MemoryDumpEvent(tid, address, data);
 		}
 		case TYPE_IRQ: {
-			return new ARMExceptionEvent(0, lastStep);
+			if(lastStep != null) {
+				lastIRQState = lastStep.getState();
+			}
+			return new ARMExceptionEvent(tid, lastStep);
 		}
 		default:
 			throw new IOException("unknown record: " + HexFormatter.tohex(type, 8) +

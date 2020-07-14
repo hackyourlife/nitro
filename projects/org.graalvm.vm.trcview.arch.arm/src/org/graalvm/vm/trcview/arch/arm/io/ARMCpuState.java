@@ -20,7 +20,12 @@ public abstract class ARMCpuState extends CpuState {
 
 	@Override
 	public long getPC() {
-		return Integer.toUnsignedLong(getGPR(15));
+		long pc = Integer.toUnsignedLong(getGPR(15));
+		if(Cpsr.T.getBit(getCPSR())) {
+			return pc - 4;
+		} else {
+			return pc - 8;
+		}
 	}
 
 	@Override

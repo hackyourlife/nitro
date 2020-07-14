@@ -7,6 +7,7 @@ import org.graalvm.vm.trcview.arch.arm.disasm.InstructionFormat.LoadStore;
 import org.graalvm.vm.trcview.arch.arm.disasm.InstructionFormat.LoadStoreMultiple;
 import org.graalvm.vm.trcview.arch.arm.disasm.InstructionFormat.MiscLoadStore;
 import org.graalvm.vm.trcview.arch.arm.disasm.InstructionFormat.MultiplyDivide;
+import org.graalvm.vm.trcview.arch.arm.disasm.InstructionFormat.Thumb;
 import org.graalvm.vm.trcview.arch.arm.io.ARMCpuState;
 import org.graalvm.vm.trcview.arch.io.InstructionType;
 import org.graalvm.vm.util.BitTest;
@@ -14,6 +15,7 @@ import org.graalvm.vm.util.HexFormatter;
 
 public class ARMv5Disassembler {
 	private static final InstructionFormat insnfmt = new InstructionFormat();
+	private static final Thumb tfmt = new Thumb();
 
 	private static final String[] DATAPROCESSING = {
 			"AND", "EOR", "SUB", "RSB",
@@ -23,7 +25,14 @@ public class ARMv5Disassembler {
 	};
 
 	public static boolean conditionPassed(int op, int cpsr) {
-		int opcd = insnfmt.cond.get(op);
+		return conditionPassedOp(insnfmt.cond.get(op), cpsr);
+	}
+
+	public static boolean conditionPassedThumb(int op, int cpsr) {
+		return conditionPassedOp(tfmt.cond.get(op), cpsr);
+	}
+
+	public static boolean conditionPassedOp(int opcd, int cpsr) {
 		switch(opcd) {
 		case Condition.EQ:
 			return Cpsr.Z.getBit(cpsr);
@@ -81,6 +90,26 @@ public class ARMv5Disassembler {
 	}
 
 	public static InstructionType getType(int op, int cpsr) {
+		if(Cpsr.T.getBit(cpsr)) {
+			return getTypeThumb(op);
+		} else {
+			return getTypeARM(op, cpsr);
+		}
+	}
+
+	public static InstructionType getTypeARM(int op, int cpsr) {
+		if(insnfmt.decodeBits2724.get(op) == 0b1111) {
+			// SWI
+			if(conditionPassed(insnfmt.cond.get(op), cpsr)) {
+				return InstructionType.SYSCALL;
+			} else {
+				return InstructionType.JCC;
+			}
+		} else if(insnfmt.cond.get(op) == 0b1110 && insnfmt.decodeBits2720.get(op) == 0b00010010 &&
+				insnfmt.decodeBits74.get(op) == 0b0111) {
+			// BKPT
+			return InstructionType.SYSCALL;
+		}
 		switch(insnfmt.decodeBits2725.get(op)) {
 		case 0b100:
 			if(!BitTest.test(op, 1 << 22) && BitTest.test(op, 1 << 20)) {
@@ -108,11 +137,7 @@ public class ARMv5Disassembler {
 		case 0b101:
 			if(insnfmt.cond.get(op) == 0b1111) {
 				// BLX (1)
-				if(conditionPassed(op, cpsr)) {
-					return InstructionType.CALL;
-				} else {
-					return InstructionType.JCC;
-				}
+				return InstructionType.CALL;
 			} else {
 				// B, BL
 				boolean l = BitTest.test(op, 1 << 24);
@@ -204,7 +229,15 @@ public class ARMv5Disassembler {
 		return InstructionType.OTHER;
 	}
 
-	public static String[] disassemble(int pc, int op) {
+	public static String[] disassemble(int pc, int cpsr, int op) {
+		if(Cpsr.T.getBit(cpsr)) {
+			return disassembleThumb(pc, op);
+		} else {
+			return disassembleARM(pc, op);
+		}
+	}
+
+	public static String[] disassembleARM(int pc, int op) {
 		if(op == 0xE1A00000) {
 			// MOV R0, R0
 			return new String[] { "NOP" };
@@ -281,8 +314,10 @@ public class ARMv5Disassembler {
 				return new String[] {
 						"LDM" + Condition.getExtension(fmt.cond.get()) + loadStoreMultiple(fmt),
 						r(fmt.Rn.get()), Register.list(fmt.register_list.get()) + "^" };
-			} else if(BitTest.test(op, 1 << 22) && BitTest.test(op, 1 << 20) && BitTest.test(op, 1 << 15)) {
+			} else if(BitTest.test(op, 1 << 22) && BitTest.test(op, 1 << 20)) {
 				// LDM (3)
+				// previous version: if(BitTest.test(op, 1 << 22) && BitTest.test(op, 1 << 20) &&
+				// BitTest.test(op, 1 << 15)) {
 				LoadStoreMultiple fmt = new LoadStoreMultiple(op);
 				String w = fmt.W.getBit() ? "!" : "";
 				return new String[] {
@@ -295,12 +330,13 @@ public class ARMv5Disassembler {
 				return new String[] {
 						"STM" + Condition.getExtension(fmt.cond.get()) + loadStoreMultiple(fmt),
 						r(fmt.Rn.get()) + w, Register.list(fmt.register_list.get()) };
-			} else if(insnfmt.decodeBits2220.get(op) == 0b100) {
+			} else if(BitTest.test(op, 1 << 22) && !BitTest.test(op, 1 << 20)) {
 				// STM (2)
 				LoadStoreMultiple fmt = new LoadStoreMultiple(op);
+				String w = fmt.W.getBit() ? "!" : ""; // weird
 				return new String[] {
 						"STM" + Condition.getExtension(fmt.cond.get()) + loadStoreMultiple(fmt),
-						r(fmt.Rn.get()), Register.list(fmt.register_list.get()) + "^" };
+						r(fmt.Rn.get()) + w, Register.list(fmt.register_list.get()) + "^" };
 			}
 			break;
 		case 0b101:
@@ -308,8 +344,8 @@ public class ARMv5Disassembler {
 				// BLX (1)
 				boolean h = insnfmt.H.getBit(op);
 				int imm = insnfmt.signed_immed_24.get(op);
-				int off = imm << 2 + (h ? 2 : 0);
-				int dst = pc(pc + off);
+				int off = (imm << 2) + (h ? 2 : 0);
+				int dst = pc + off;
 				return new String[] { "BLX",
 						"0x" + HexFormatter.tohex(Integer.toUnsignedLong(dst)).toUpperCase() };
 			} else {
@@ -317,7 +353,7 @@ public class ARMv5Disassembler {
 				boolean l = BitTest.test(op, 1 << 24);
 				int imm = insnfmt.signed_immed_24.get(op);
 				int off = imm << 2;
-				int dst = pc(pc + off);
+				int dst = pc + off;
 				return new String[] {
 						"B" + (l ? "L" : "") + Condition.getExtension(insnfmt.cond.get(op)),
 						"0x" + HexFormatter.tohex(Integer.toUnsignedLong(dst)).toUpperCase() };
@@ -605,11 +641,13 @@ public class ARMv5Disassembler {
 		case 0b00010000_1001:
 			// SWP
 			return new String[] { "SWP" + Condition.getExtension(insnfmt.cond.get(op)),
-					r(insnfmt.Rd.get(op)), r(insnfmt.Rm.get()), "[" + r(insnfmt.Rn.get()) + "]" };
+					r(insnfmt.Rd.get(op)), r(insnfmt.Rm.get(op)),
+					"[" + r(insnfmt.Rn.get(op)) + "]" };
 		case 0b00010100_1001:
 			// SWPB
 			return new String[] { "SWP" + Condition.getExtension(insnfmt.cond.get(op)) + "B",
-					r(insnfmt.Rd.get(op)), r(insnfmt.Rm.get()), "[" + r(insnfmt.Rn.get()) + "]" };
+					r(insnfmt.Rd.get(op)), r(insnfmt.Rm.get(op)),
+					"[" + r(insnfmt.Rn.get(op)) + "]" };
 		case 0b00001010_1001: {
 			// UMLAL
 			MultiplyDivide fmt = new MultiplyDivide(op);
@@ -638,8 +676,8 @@ public class ARMv5Disassembler {
 
 		switch(insnfmt.decodeBits2720.get(op)) {
 		case 0b00110010: { // MSR CPSR_<fields>, <imm>
-			int rotate_imm = insnfmt.rotate_imm.get();
-			int immed_8 = insnfmt.immed_8.get();
+			int rotate_imm = insnfmt.rotate_imm.get(op);
+			int immed_8 = insnfmt.immed_8.get(op);
 			int operand = Integer.rotateRight(immed_8, rotate_imm * 2);
 			StringBuilder fields = new StringBuilder();
 			if(BitTest.test(op, 1 << 19)) {
@@ -658,8 +696,8 @@ public class ARMv5Disassembler {
 					imm(operand) };
 		}
 		case 0b00110110: { // MSR SPSR_<fields>, <imm>
-			int rotate_imm = insnfmt.rotate_imm.get();
-			int immed_8 = insnfmt.immed_8.get();
+			int rotate_imm = insnfmt.rotate_imm.get(op);
+			int immed_8 = insnfmt.immed_8.get(op);
 			int operand = Integer.rotateRight(immed_8, rotate_imm * 2);
 			StringBuilder fields = new StringBuilder();
 			if(BitTest.test(op, 1 << 19)) {
@@ -719,7 +757,7 @@ public class ARMv5Disassembler {
 					r(insnfmt.Rd.get(op)), "SPSR" };
 		case 0b11000100:
 			// MCRR, MCRR2
-			if(insnfmt.cond.get() == 0b1111) {
+			if(insnfmt.cond.get(op) == 0b1111) {
 				Coprocessor cp = new Coprocessor(op);
 				return new String[] { "MCRR2", cp(cp.cp_num.get()), Integer.toString(cp.opcode.get()),
 						r(cp.Rd.get()), r(cp.Rn.get()), cr(cp.CRm.get()) };
@@ -731,7 +769,7 @@ public class ARMv5Disassembler {
 			}
 		case 0b11000101:
 			// MRRC, MRRC2
-			if(insnfmt.cond.get() == 0b1111) {
+			if(insnfmt.cond.get(op) == 0b1111) {
 				Coprocessor cp = new Coprocessor(op);
 				return new String[] { "MRRC2", cp(cp.cp_num.get()), Integer.toString(cp.opcode.get()),
 						r(cp.Rd.get()), r(cp.Rn.get()), cr(cp.CRm.get()) };
@@ -748,8 +786,8 @@ public class ARMv5Disassembler {
 				// MUL{S}
 				return new String[] {
 						"MUL" + Condition.getExtension(insnfmt.cond.get(op)) +
-								(insnfmt.S.getBit() ? "S" : ""),
-						r(insnfmt.Rd.get()), r(insnfmt.Rs.get()), r(insnfmt.Rm.get()) };
+								(insnfmt.S.getBit(op) ? "S" : ""),
+						r(insnfmt.Rd.get(op)), r(insnfmt.Rs.get(op)), r(insnfmt.Rm.get(op)) };
 			}
 			break;
 		}
@@ -827,10 +865,6 @@ public class ARMv5Disassembler {
 		return new String[] { "; unknown" };
 	}
 
-	private static int pc(int pc) {
-		return pc;
-	}
-
 	public static String r(int r) {
 		return Register.getR(r);
 	}
@@ -867,7 +901,7 @@ public class ARMv5Disassembler {
 
 		String sign = operand < 0 ? "-" : "";
 		if(op < 10) {
-			return "#" + sign + operand;
+			return "#" + sign + op;
 		} else {
 			return "#" + sign + "0x" + HexFormatter.tohex(op).toUpperCase();
 		}
@@ -1126,5 +1160,383 @@ public class ARMv5Disassembler {
 			return new String[] { "[" + r(fmt.Rn.get()) + "]", (u ? "+" : "-") + r(fmt.Rm.get()) };
 		}
 		return new String[] { "; invalid addressing mode" };
+	}
+
+	// THUMB MODE
+	public static InstructionType getTypeThumb(int op) {
+		switch(tfmt.opcode1510.get(op)) {
+		case 0b110100:
+		case 0b110101:
+		case 0b110110:
+		case 0b110111:
+			// B (1)
+			if(tfmt.cond.get(op) == Condition.AL) {
+				return InstructionType.JMP;
+			} else if(tfmt.cond.get(op) == 0b1111) {
+				return InstructionType.SYSCALL;
+			} else {
+				return InstructionType.JCC;
+			}
+		case 0b111000:
+		case 0b111001:
+			// B (2)
+			return InstructionType.JMP;
+		case 0b101111:
+			if(BitTest.test(op, 1 << 9) && !BitTest.test(op, 1 << 8)) {
+				return InstructionType.SYSCALL;
+			} else if(!BitTest.test(op, 1 << 9)) {
+				// POP
+				if(tfmt.R.getBit(op)) {
+					return InstructionType.RET;
+				}
+				return InstructionType.OTHER;
+			}
+			break;
+		case 0b111110:
+		case 0b111111:
+			// BL
+			return InstructionType.CALL;
+		case 0b111010:
+		case 0b111011:
+			// BLX
+			return InstructionType.CALL;
+		case 0b010001:
+			switch(tfmt.opcode97.get(op)) {
+			case 0b111:
+				// BLX (2)
+				return InstructionType.CALL;
+			case 0b110:
+				// BX
+				int rm = tfmt.Rn.get(op) | (tfmt.H2.getBit(op) ? 8 : 0);
+				if(rm == 14) {
+					// BX LR
+					return InstructionType.RET;
+				} else {
+					return InstructionType.JMP_INDIRECT;
+				}
+			}
+			break;
+		}
+		return InstructionType.OTHER;
+	}
+
+	public static String[] disassembleThumb(int pc, int op) {
+		switch(tfmt.opcode1510.get(op)) {
+		case 0b010000:
+			switch(tfmt.opcode96.get(op)) {
+			case 0b0000:
+				// AND
+				return new String[] { "AND", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b0101:
+				// ADC
+				return new String[] { "ADC", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b0100:
+				// ASR (2)
+				return new String[] { "ASR", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b1110:
+				// BIC
+				return new String[] { "BIC", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b1011:
+				// CMN
+				return new String[] { "CMN", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b1010:
+				// CMP (2)
+				return new String[] { "CMP", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b0001:
+				// EOR
+				return new String[] { "EOR", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b0010:
+				// LSL (2)
+				return new String[] { "LSL", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b0011:
+				// LSR (2)
+				return new String[] { "LSR", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b1101:
+				// MUL
+				return new String[] { "MUL", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b1111:
+				// MVN
+				return new String[] { "MVN", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b1001:
+				// NEG
+				return new String[] { "NEG", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b1100:
+				// ORR
+				return new String[] { "ORR", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b0111:
+				// ROR
+				return new String[] { "ROR", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			case 0b0110:
+				// SBC
+				return new String[] { "SBC", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+			}
+			break;
+		case 0b000111:
+			if(!BitTest.test(op, 1 << 9)) {
+				// ADD (1)
+				return new String[] { "ADD", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)),
+						imm(tfmt.immed_3.get(op)) };
+			} else {
+				switch(tfmt.opcode86.get(op)) {
+				case 0b000:
+					// MOV (2)
+					return new String[] { "MOV", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)) };
+				case 0b100:
+				case 0b101:
+				case 0b110:
+				case 0b111:
+					// SUB (1)
+					return new String[] { "SUB", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)),
+							imm(tfmt.immed_3.get(op)) };
+				}
+			}
+			break;
+		case 0b001100:
+		case 0b001101:
+			// ADD (2)
+			return new String[] { "ADD", r(tfmt.Rd10.get(op)), imm(tfmt.immed_8.get(op)) };
+		case 0b000110:
+			if(!BitTest.test(op, 1 << 9)) {
+				// ADD (3)
+				return new String[] { "ADD", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)),
+						r(tfmt.Rm.get(op)) };
+			} else {
+				// SUB (3)
+				return new String[] { "SUB", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)),
+						r(tfmt.Rm.get(op)) };
+			}
+		case 0b010001:
+			switch(tfmt.opcode97.get(op)) {
+			case 0b000:
+			case 0b001: {
+				// ADD (4)
+				int rd = tfmt.Rd.get(op) | (tfmt.H1.getBit(op) ? 8 : 0);
+				int rm = tfmt.Rn.get(op) | (tfmt.H2.getBit(op) ? 8 : 0);
+				return new String[] { "ADD", r(rd), r(rm) };
+			}
+			case 0b111: {
+				// BLX (2)
+				int rm = tfmt.Rn.get(op) | (tfmt.H2.getBit(op) ? 8 : 0);
+				return new String[] { "BLX", r(rm) };
+			}
+			case 0b110: {
+				// BX
+				int rm = tfmt.Rn.get(op) | (tfmt.H2.getBit(op) ? 8 : 0);
+				return new String[] { "BX", r(rm) };
+			}
+			case 0b010:
+			case 0b011: {
+				// CMP (3)
+				int rd = tfmt.Rd.get(op) | (tfmt.H1.getBit(op) ? 8 : 0);
+				int rm = tfmt.Rn.get(op) | (tfmt.H2.getBit(op) ? 8 : 0);
+				return new String[] { "CMP", r(rd), r(rm) };
+			}
+			case 0b100:
+			case 0b101: {
+				// CPY / MOV (2)
+				int rd = tfmt.Rd.get(op) | (tfmt.H1.getBit(op) ? 8 : 0);
+				int rm = tfmt.Rn.get(op) | (tfmt.H2.getBit(op) ? 8 : 0);
+				return new String[] { "CPY", r(rd), r(rm) };
+			}
+			}
+			break;
+		case 0b101000:
+		case 0b101001:
+			// ADD (5)
+			return new String[] { "ADD", r(tfmt.Rd10.get(op)), "PC", imm(tfmt.immed_8.get() * 4) };
+		case 0b101010:
+		case 0b101011:
+			// ADD (6)
+			return new String[] { "ADD", r(tfmt.Rd10.get(op)), "SP", imm(tfmt.immed_8.get() * 4) };
+		case 0b101100:
+			switch(tfmt.opcode97.get(op)) {
+			case 0b000:
+				// ADD (7)
+				return new String[] { "ADD", "SP", imm(tfmt.immed_7.get(op) * 4) };
+			case 0b001:
+				// SUB (4)
+				return new String[] { "SUB", "SP", imm(tfmt.immed_7.get(op) * 4) };
+			}
+			break;
+		case 0b000100:
+		case 0b000101:
+			// ASR (1)
+			return new String[] { "ASR", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)),
+					imm(tfmt.immed_5.get(op)) };
+		case 0b110100:
+		case 0b110101:
+		case 0b110110:
+		case 0b110111:
+			if(tfmt.cond.get(op) == 0b1111) {
+				// SWI
+				return new String[] { "SWI", "#" + tfmt.immed_8.get(op) };
+			} else {
+				// B (1)
+				return new String[] { "B" + Condition.getExtension(tfmt.cond.get(op)),
+						"0x" + HexFormatter
+								.tohex(Integer.toUnsignedLong(
+										pc + tfmt.offset_8.get(op) << 1))
+								.toUpperCase() };
+			}
+		case 0b111000:
+		case 0b111001:
+			// B (2)
+			return new String[] { "B",
+					HexFormatter.tohex(Integer.toUnsignedLong(pc + tfmt.offset_11.get(op) << 1))
+							.toUpperCase() };
+		case 0b101111:
+			if(BitTest.test(op, 1 << 9) && !BitTest.test(op, 1 << 8)) {
+				// BKPT
+				return new String[] { "BKPT", "#" + tfmt.immed_8.get(op) };
+			} else if(!BitTest.test(op, 1 << 9)) {
+				// POP
+				int register_list = tfmt.register_list.get(op);
+				if(tfmt.R.getBit(op)) {
+					// include PC
+					register_list |= 1 << 15;
+				}
+				return new String[] { "POP", Register.list(register_list) };
+			}
+		case 0b111100:
+		case 0b111101:
+			// BL (1)
+			return new String[] { "BL(hi)", imm(pc + tfmt.offset_11.get(op) << 12) };
+		case 0b111110:
+		case 0b111111:
+			// BL (2)
+			return new String[] { "BL(lo)", simm(tfmt.offset_11.get(op) << 1) };
+		case 0b111010:
+		case 0b111011:
+			// BLX (2)
+			return new String[] { "BLX(lo)", simm(tfmt.offset_11.get(op) << 1) };
+		case 0b001010:
+		case 0b001011:
+			// CMP (1)
+			return new String[] { "CMP", r(tfmt.Rd10.get(op)), imm(tfmt.immed_8.get(op)) };
+		case 0b110010:
+		case 0b110011:
+			// LDMIA
+			return new String[] { "LDMIA", r(tfmt.Rd10.get(op)) + "!",
+					Register.list(tfmt.register_list.get(op)) };
+		case 0b011010:
+		case 0b011011:
+			// LDR (1)
+			return new String[] { "LDR", r(tfmt.Rd.get(op)),
+					"[" + r(tfmt.Rn.get(op)) + ", " + imm(tfmt.immed_5.get(op) * 4) + "]" };
+		case 0b010110:
+			if(!BitTest.test(op, 1 << 9)) {
+				// LDR (2)
+				return new String[] { "LDR", r(tfmt.Rd.get(op)),
+						"[" + r(tfmt.Rn.get(op)) + ", " + r(tfmt.Rm.get(op)) + "]" };
+			} else {
+				// LDRH (2)
+				return new String[] { "LDRH", r(tfmt.Rd.get(op)),
+						"[" + r(tfmt.Rn.get(op)) + ", " + r(tfmt.Rm.get(op)) + "]" };
+			}
+		case 0b010010:
+		case 0b010011:
+			// LDR (3)
+			return new String[] { "LDR", r(tfmt.Rd10.get(op)),
+					"[PC, " + imm(tfmt.immed_8.get(op) * 4) + "]" };
+		case 0b100110:
+		case 0b100111:
+			// LDR (4)
+			return new String[] { "LDR", r(tfmt.Rd10.get(op)),
+					"[SP, " + imm(tfmt.immed_8.get(op) * 4) + "]" };
+		case 0b011110:
+		case 0b011111:
+			// LDRB (1)
+			return new String[] { "LDRB", r(tfmt.Rd.get(op)),
+					"[" + r(tfmt.Rn.get(op)) + ", " + imm(tfmt.immed_5.get(op)) + "]" };
+		case 0b010111:
+			if(!BitTest.test(op, 1 << 9)) {
+				// LDRB (2)
+				return new String[] { "LDRB", r(tfmt.Rd.get(op)),
+						"[" + r(tfmt.Rn.get(op)) + ", " + r(tfmt.Rm.get(op)) + "]" };
+			} else {
+				// LDRSH
+				return new String[] { "LDRB", r(tfmt.Rd.get(op)),
+						"[" + r(tfmt.Rn.get(op)) + ", " + r(tfmt.Rm.get(op)) + "]" };
+			}
+		case 0b100010:
+		case 0b100011:
+			// LDRH (1)
+			return new String[] { "LDRH", r(tfmt.Rd.get(op)),
+					"[" + r(tfmt.Rn.get(op)) + ", " + imm(tfmt.immed_5.get(op) * 2) + "]" };
+		case 0b010101:
+			if(BitTest.test(op, 1 << 9)) {
+				// LDRSB
+				return new String[] { "LDRSB", r(tfmt.Rd.get(op)),
+						"[" + r(tfmt.Rn.get(op)) + ", " + r(tfmt.Rm.get(op)) + "]" };
+			} else {
+				// STRB (2)
+				return new String[] { "STRB", r(tfmt.Rd.get(op)),
+						"[" + r(tfmt.Rn.get(op)) + ", " + r(tfmt.Rm.get(op)) + "]" };
+			}
+		case 0b000000:
+		case 0b000001:
+			// LSL (1)
+			return new String[] { "LSL", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)),
+					imm(tfmt.immed_5.get(op)) };
+		case 0b000010:
+		case 0b000011:
+			// LSR (1)
+			return new String[] { "LSR", r(tfmt.Rd.get(op)), r(tfmt.Rn.get(op)),
+					imm(tfmt.immed_5.get(op)) };
+		case 0b001000:
+		case 0b001001:
+			// MOV (1)
+			return new String[] { "MOV", r(tfmt.Rd10.get(op)), imm(tfmt.immed_8.get(op)) };
+		case 0b101101:
+			if(!BitTest.test(op, 1 << 9)) {
+				// PUSH
+				int register_list = tfmt.register_list.get(op);
+				if(tfmt.R.getBit(op)) {
+					register_list |= 1 << 14;
+				}
+				return new String[] { "PUSH", Register.list(register_list) };
+			}
+			break;
+		case 0b110000:
+		case 0b110001:
+			// STMIA
+			return new String[] { "STMIA", r(tfmt.Rd10.get(op)) + "!",
+					Register.list(tfmt.register_list.get(op)) };
+		case 0b011000:
+		case 0b011001:
+			// STR (1)
+			return new String[] { "STR", r(tfmt.Rd.get(op)),
+					"[" + r(tfmt.Rn.get(op)) + ", " + imm(tfmt.immed_5.get(op) * 4) + "]" };
+		case 0b010100:
+			if(!BitTest.test(op, 1 << 9)) {
+				// STR (2)
+				return new String[] { "STR", r(tfmt.Rd.get(op)),
+						"[" + r(tfmt.Rn.get(op)) + ", " + r(tfmt.Rm.get(op)) + "]" };
+			} else {
+				// STRH (2)
+				return new String[] { "STRH", r(tfmt.Rd.get(op)),
+						"[" + r(tfmt.Rn.get(op)) + ", " + r(tfmt.Rm.get(op)) + "]" };
+			}
+		case 0b100100:
+		case 0b100101:
+			// STR (3)
+			return new String[] { "STR", r(tfmt.Rd10.get(op)),
+					"[SP, " + imm(tfmt.immed_8.get(op) * 4) + "]" };
+		case 0b011100:
+		case 0b011101:
+			// STRB (1)
+			return new String[] { "STRB", r(tfmt.Rd.get(op)),
+					"[" + r(tfmt.Rn.get(op)) + ", " + imm(tfmt.immed_5.get(op)) + "]" };
+		case 0b100000:
+		case 0b100001:
+			// STRH (1)
+			return new String[] { "STRH", r(tfmt.Rd.get(op)),
+					"[" + r(tfmt.Rn.get(op)) + ", " + imm(tfmt.immed_5.get(op) * 2) + "]" };
+		case 0b001110:
+		case 0b001111:
+			// SUB (2)
+			return new String[] { "SUB", r(tfmt.Rd10.get(op)), imm(tfmt.immed_8.get(op)) };
+		}
+		return new String[] { "; unknown" };
 	}
 }
