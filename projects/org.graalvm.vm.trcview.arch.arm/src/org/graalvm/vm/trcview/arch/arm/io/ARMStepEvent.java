@@ -12,36 +12,33 @@ import org.graalvm.vm.trcview.arch.io.StepFormat;
 import org.graalvm.vm.util.io.Endianess;
 import org.graalvm.vm.util.io.WordOutputStream;
 
-public class ARMStepEvent extends StepEvent {
-	private final ARMCpuState state;
-	private final int overrideType;
+public abstract class ARMStepEvent extends StepEvent {
+	private int overrideType;
 
-	public ARMStepEvent(ARMCpuState state) {
-		this(state, -1);
+	protected ARMStepEvent(int tid) {
+		super(Elf.EM_ARM, tid);
 	}
 
-	public ARMStepEvent(ARMCpuState state, int overrideType) {
-		super(Elf.EM_ARM, state.getTid());
-		this.state = state;
-		this.overrideType = overrideType;
+	void setTypeOverride(int override) {
+		overrideType = override;
 	}
 
 	@Override
 	public byte[] getMachinecode() {
-		if(Cpsr.T.getBit(state.getCPSR())) {
+		if(Cpsr.T.getBit(getState().getCPSR())) {
 			byte[] machinecode = new byte[2];
-			Endianess.set16bitLE(machinecode, (short) state.getCode());
+			Endianess.set16bitLE(machinecode, (short) getState().getCode());
 			return machinecode;
 		} else {
 			byte[] machinecode = new byte[4];
-			Endianess.set32bitLE(machinecode, state.getCode());
+			Endianess.set32bitLE(machinecode, getState().getCode());
 			return machinecode;
 		}
 	}
 
 	@Override
 	public String[] getDisassemblyComponents() {
-		return ARMv5Disassembler.disassemble(state.getGPR(15), state.getCPSR(), state.getCode());
+		return ARMv5Disassembler.disassemble(getState().getGPR(15), getState().getCPSR(), getState().getCode());
 	}
 
 	@Override
@@ -56,7 +53,7 @@ public class ARMStepEvent extends StepEvent {
 
 	@Override
 	public long getPC() {
-		return state.getPC();
+		return getState().getPC();
 	}
 
 	@Override
@@ -66,19 +63,17 @@ public class ARMStepEvent extends StepEvent {
 		} else if(overrideType == 2) {
 			return InstructionType.OTHER;
 		} else {
-			return ARMv5Disassembler.getType(state);
+			return ARMv5Disassembler.getType(getState());
 		}
 	}
 
 	@Override
 	public long getStep() {
-		return state.getStep();
+		return getState().getStep();
 	}
 
 	@Override
-	public ARMCpuState getState() {
-		return state;
-	}
+	public abstract ARMCpuState getState();
 
 	@Override
 	public StepFormat getFormat() {

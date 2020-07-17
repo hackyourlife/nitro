@@ -149,7 +149,7 @@ public class ARMTraceReader extends ArchTraceReader {
 		switch(type) {
 		case TYPE_STEP9:
 			steps++;
-			lastState = new ARMCpuDeltaState(in, lastState);
+			lastState = ARMCpuDeltaState.deltaState(in, lastState);
 			if(steps >= STEP_LIMIT) {
 				lastState = new ARMCpuFullState(lastState);
 				steps = 0;
@@ -171,7 +171,8 @@ public class ARMTraceReader extends ArchTraceReader {
 						if(BitTest.test(lastCode, 1 << reg)) {
 							// yes, the register was POP'd
 							// override the instruction type to RET
-							lastStep = new ARMStepEvent(lastState, 1);
+							lastStep = lastState;
+							lastStep.setTypeOverride(1);
 							return lastStep;
 						}
 					}
@@ -208,12 +209,13 @@ public class ARMTraceReader extends ArchTraceReader {
 				lastState = new ARMCpuFullState(lastState, tid);
 				if(ARMv5Disassembler.getType(lastState) == InstructionType.RET) {
 					// no RET after context switch
-					lastStep = new ARMStepEvent(lastState, 2);
+					lastStep = lastState;
+					lastStep.setTypeOverride(2);
 				} else {
-					lastStep = new ARMStepEvent(lastState);
+					lastStep = lastState;
 				}
 			} else {
-				lastStep = new ARMStepEvent(lastState);
+				lastStep = lastState;
 			}
 			return lastStep;
 		case TYPE_READ_8: {

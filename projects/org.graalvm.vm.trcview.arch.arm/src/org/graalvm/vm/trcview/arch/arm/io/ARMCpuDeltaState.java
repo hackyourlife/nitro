@@ -11,28 +11,46 @@ public class ARMCpuDeltaState extends ARMCpuState {
 
 	private final ARMCpuState lastState;
 	private final int cpsr;
-	private final byte mask;
 	private final short rmask;
 	private final int code;
 	private final long step;
 	private final int[] data;
 
-	public ARMCpuDeltaState(WordInputStream in, ARMCpuState state) throws IOException {
+	public ARMCpuDeltaState(ARMCpuState state, int cpsr, short rmask, int code, long step, int[] data) {
 		super(state.getTid());
 		lastState = state;
-		mask = (byte) in.read8bit();
-		rmask = in.read16bit();
-		code = in.read32bit();
-		step = in.read64bit();
+		this.rmask = rmask;
+		this.code = code;
+		this.step = step;
+		this.cpsr = cpsr;
+		this.data = data;
+	}
+
+	public static ARMCpuState deltaState(WordInputStream in, ARMCpuState state) throws IOException {
+		byte mask = (byte) in.read8bit();
+		short rmask = in.read16bit();
+		int code = in.read32bit();
+		long step = in.read64bit();
+		int cpsr;
 		if(BitTest.test(mask, MASK_CPSR)) {
 			cpsr = in.read32bit();
 		} else {
 			cpsr = state.getCPSR();
 		}
+
 		int count = Integer.bitCount(Short.toUnsignedInt(rmask));
-		data = new int[count];
-		for(int i = 0; i < data.length; i++) {
-			data[i] = in.read32bit();
+		if(count == 0) {
+			return new ARMCpuTinyDeltaState(state, cpsr, code, step);
+		} else if(count == 1) {
+			int value = in.read32bit();
+			return new ARMCpuSmallDeltaState(state, cpsr, code, step,
+					(byte) Integer.numberOfTrailingZeros(rmask), value);
+		} else {
+			int[] data = new int[count];
+			for(int i = 0; i < data.length; i++) {
+				data[i] = in.read32bit();
+			}
+			return new ARMCpuDeltaState(state, cpsr, rmask, code, step, data);
 		}
 	}
 

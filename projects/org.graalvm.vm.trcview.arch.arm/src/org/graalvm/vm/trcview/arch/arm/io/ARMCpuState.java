@@ -1,13 +1,12 @@
 package org.graalvm.vm.trcview.arch.arm.io;
 
-import org.graalvm.vm.posix.elf.Elf;
 import org.graalvm.vm.trcview.arch.arm.disasm.Cpsr;
 import org.graalvm.vm.trcview.arch.io.CpuState;
 import org.graalvm.vm.util.HexFormatter;
 
-public abstract class ARMCpuState extends CpuState {
+public abstract class ARMCpuState extends ARMStepEvent implements CpuState {
 	protected ARMCpuState(int tid) {
-		super(Elf.EM_ARM, tid);
+		super(tid);
 	}
 
 	public abstract int getGPR(int reg);
@@ -83,6 +82,11 @@ public abstract class ARMCpuState extends CpuState {
 		default:
 			throw new IllegalArgumentException("unknown register " + name);
 		}
+	}
+
+	@Override
+	public ARMCpuState getState() {
+		return this;
 	}
 
 	@Override
