@@ -2,6 +2,7 @@ package org.graalvm.vm.trcview.arch.arm.decode;
 
 import static org.graalvm.vm.trcview.decode.DecoderUtils.str;
 
+import org.graalvm.vm.trcview.analysis.memory.MemoryNotMappedException;
 import org.graalvm.vm.trcview.analysis.type.Function;
 import org.graalvm.vm.trcview.analysis.type.Prototype;
 import org.graalvm.vm.trcview.analysis.type.Type;
@@ -13,11 +14,13 @@ import org.graalvm.vm.trcview.expression.ExpressionContext;
 import org.graalvm.vm.trcview.net.TraceAnalyzer;
 
 public class ARMCallDecoder extends CallDecoder {
-	private static long getRegister(ARMCpuState state, int reg) {
-		if(reg <= 3) {
-			return state.getGPR(reg);
+	private static long getArgument(ARMCpuState state, int arg, TraceAnalyzer trc) throws MemoryNotMappedException {
+		if(arg <= 3) {
+			return state.getGPR(arg);
 		} else {
-			return 0;
+			int sp = state.getGPR(13);
+			int pos = sp + (arg - 4) * 4;
+			return (int) trc.getI64(pos, state.getStep());
 		}
 	}
 
@@ -28,22 +31,28 @@ public class ARMCallDecoder extends CallDecoder {
 		Prototype prototype = function.getPrototype();
 		for(int i = 0, arg = 0; i < prototype.args.size(); i++) {
 			Type type = prototype.args.get(i);
-			long val;
+			String strval = "?";
 			if(type.getExpression() != null) {
 				try {
 					ExpressionContext ctx = new ExpressionContext(state, trc);
-					val = type.getExpression().evaluate(ctx);
+					long val = type.getExpression().evaluate(ctx);
+					strval = str(type, val, state, trc);
 				} catch(EvaluationException e) {
-					val = 0;
+					strval = "?";
 				}
 			} else {
-				val = getRegister(state, arg++);
+				try {
+					long val = getArgument(state, arg++, trc);
+					strval = str(type, val, state, trc);
+				} catch(MemoryNotMappedException e) {
+					strval = "?";
+				}
 			}
 			if(i > 0) {
 				buf.append(", ");
 			}
-			val = val & 0xFFFFFFFFL; // truncate to 32bit
-			buf.append(str(type, val, state, trc));
+			// val = val & 0xFFFFFFFFL; // truncate to 32bit
+			buf.append(strval);
 		}
 		buf.append(')');
 		if(nextState != null) {
