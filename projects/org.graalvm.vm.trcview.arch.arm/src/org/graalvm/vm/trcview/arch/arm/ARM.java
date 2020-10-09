@@ -3,6 +3,7 @@ package org.graalvm.vm.trcview.arch.arm;
 import java.io.InputStream;
 
 import org.graalvm.vm.posix.elf.Elf;
+import org.graalvm.vm.trcview.analysis.type.ArchitectureTypeInfo;
 import org.graalvm.vm.trcview.arch.Architecture;
 import org.graalvm.vm.trcview.arch.arm.decode.ARMCallDecoder;
 import org.graalvm.vm.trcview.arch.arm.decode.ARMSyscallDecoder;
@@ -80,5 +81,10 @@ public class ARM extends Architecture {
 	@Override
 	public boolean isTaggedState() {
 		return true;
+	}
+
+	@Override
+	public ArchitectureTypeInfo getTypeInfo() {
+		return ArchitectureTypeInfo.ILP32;
 	}
 }
