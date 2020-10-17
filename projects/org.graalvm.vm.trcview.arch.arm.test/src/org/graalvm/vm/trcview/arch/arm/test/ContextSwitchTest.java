@@ -3,11 +3,8 @@ package org.graalvm.vm.trcview.arch.arm.test;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import java.io.IOException;
-
 import org.graalvm.vm.trcview.arch.arm.io.ARMContextSwitchEvent;
 import org.graalvm.vm.trcview.arch.arm.io.ARMCpuState;
-import org.graalvm.vm.util.io.WordOutputStream;
 import org.junit.Test;
 
 public class ContextSwitchTest {
@@ -45,10 +42,6 @@ public class ContextSwitchTest {
 		@Override
 		public long getStep() {
 			return 0;
-		}
-
-		@Override
-		protected void writeRecord(WordOutputStream out) throws IOException {
 		}
 	}
 

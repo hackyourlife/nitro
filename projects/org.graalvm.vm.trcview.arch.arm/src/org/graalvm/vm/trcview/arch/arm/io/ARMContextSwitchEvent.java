@@ -1,13 +1,9 @@
 package org.graalvm.vm.trcview.arch.arm.io;
 
-import java.io.IOException;
-
-import org.graalvm.vm.trcview.arch.arm.ARM;
 import org.graalvm.vm.trcview.arch.arm.device.ARMDevices;
 import org.graalvm.vm.trcview.arch.arm.disasm.ARMv5Disassembler;
 import org.graalvm.vm.trcview.arch.arm.disasm.Cpsr;
 import org.graalvm.vm.trcview.arch.io.DeviceEvent;
-import org.graalvm.vm.util.io.WordOutputStream;
 
 public class ARMContextSwitchEvent extends DeviceEvent {
 	private int id;
@@ -15,7 +11,7 @@ public class ARMContextSwitchEvent extends DeviceEvent {
 	private final boolean preempt;
 
 	public ARMContextSwitchEvent(int tid, boolean preempt) {
-		super(ARM.ID, tid);
+		super(tid);
 		this.id = 0;
 		this.address = 0;
 		this.preempt = preempt;
@@ -103,10 +99,5 @@ public class ARMContextSwitchEvent extends DeviceEvent {
 			return "Context switch: execute thread " + id + " [0x" + Integer.toUnsignedString(address, 16) +
 					"]";
 		}
-	}
-
-	@Override
-	protected void writeRecord(WordOutputStream out) throws IOException {
-		// TODO Auto-generated method stub
 	}
 }

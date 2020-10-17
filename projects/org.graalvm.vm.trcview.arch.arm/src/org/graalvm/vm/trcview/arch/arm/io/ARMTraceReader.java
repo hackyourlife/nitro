@@ -16,6 +16,9 @@ import org.graalvm.vm.trcview.arch.io.Event;
 import org.graalvm.vm.trcview.arch.io.InstructionType;
 import org.graalvm.vm.trcview.arch.io.MemoryDumpEvent;
 import org.graalvm.vm.trcview.arch.io.MemoryEvent;
+import org.graalvm.vm.trcview.arch.io.MemoryEventI16;
+import org.graalvm.vm.trcview.arch.io.MemoryEventI32;
+import org.graalvm.vm.trcview.arch.io.MemoryEventI8;
 import org.graalvm.vm.trcview.arch.io.MmapEvent;
 import org.graalvm.vm.trcview.net.protocol.IO;
 import org.graalvm.vm.util.BitTest;
@@ -219,40 +222,34 @@ public class ARMTraceReader extends ArchTraceReader {
 			}
 			return lastStep;
 		case TYPE_READ_8: {
-			long value = Integer.toUnsignedLong(in.read8bit());
+			byte value = (byte) in.read8bit();
 			long address = Integer.toUnsignedLong(in.read32bit());
-			byte size = 1;
-			return mem = new MemoryEvent(false, tid, address, size, false, value);
+			return mem = new MemoryEventI8(false, tid, address, false, value);
 		}
 		case TYPE_READ_16: {
-			long value = Integer.toUnsignedLong(in.read16bit());
+			short value = in.read16bit();
 			long address = Integer.toUnsignedLong(in.read32bit());
-			byte size = 2;
-			return mem = new MemoryEvent(false, tid, address, size, false, value);
+			return mem = new MemoryEventI16(false, tid, address, false, value);
 		}
 		case TYPE_READ_32: {
-			long value = Integer.toUnsignedLong(in.read32bit());
+			int value = in.read32bit();
 			long address = Integer.toUnsignedLong(in.read32bit());
-			byte size = 4;
-			return mem = new MemoryEvent(false, tid, address, size, false, value);
+			return mem = new MemoryEventI32(false, tid, address, false, value);
 		}
 		case TYPE_WRITE_8: {
-			long value = Integer.toUnsignedLong(in.read8bit());
+			byte value = (byte) in.read8bit();
 			long address = Integer.toUnsignedLong(in.read32bit());
-			byte size = 1;
-			return mem = new MemoryEvent(false, tid, address, size, true, value);
+			return mem = new MemoryEventI8(false, tid, address, true, value);
 		}
 		case TYPE_WRITE_16: {
-			long value = Integer.toUnsignedLong(in.read16bit());
+			short value = in.read16bit();
 			long address = Integer.toUnsignedLong(in.read32bit());
-			byte size = 2;
-			return mem = new MemoryEvent(false, tid, address, size, true, value);
+			return mem = new MemoryEventI16(false, tid, address, true, value);
 		}
 		case TYPE_WRITE_32: {
-			long value = Integer.toUnsignedLong(in.read32bit());
+			int value = in.read32bit();
 			long address = Integer.toUnsignedLong(in.read32bit());
-			byte size = 4;
-			return mem = new MemoryEvent(false, tid, address, size, true, value);
+			return mem = new MemoryEventI32(false, tid, address, true, value);
 		}
 		case TYPE_DUMP: {
 			long address = Integer.toUnsignedLong(in.read32bit());

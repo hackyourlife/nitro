@@ -1,9 +1,5 @@
 package org.graalvm.vm.trcview.arch.arm.io;
 
-import java.io.IOException;
-
-import org.graalvm.vm.util.io.WordOutputStream;
-
 public class ARMCpuFullState extends ARMCpuState {
 	private final int[] r = new int[16];
 	private final int cpsr;
@@ -53,10 +49,5 @@ public class ARMCpuFullState extends ARMCpuState {
 	@Override
 	public long getStep() {
 		return step;
-	}
-
-	@Override
-	protected void writeRecord(WordOutputStream out) throws IOException {
-		// TODO Auto-generated method stub
 	}
 }

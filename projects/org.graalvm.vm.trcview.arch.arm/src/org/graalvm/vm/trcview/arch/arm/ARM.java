@@ -7,10 +7,8 @@ import org.graalvm.vm.trcview.analysis.type.ArchitectureTypeInfo;
 import org.graalvm.vm.trcview.arch.Architecture;
 import org.graalvm.vm.trcview.arch.arm.decode.ARMCallDecoder;
 import org.graalvm.vm.trcview.arch.arm.decode.ARMSyscallDecoder;
-import org.graalvm.vm.trcview.arch.arm.io.ARMEventParser;
 import org.graalvm.vm.trcview.arch.arm.io.ARMTraceReader;
 import org.graalvm.vm.trcview.arch.io.ArchTraceReader;
-import org.graalvm.vm.trcview.arch.io.EventParser;
 import org.graalvm.vm.trcview.arch.io.StepFormat;
 import org.graalvm.vm.trcview.decode.CallDecoder;
 import org.graalvm.vm.trcview.decode.SyscallDecoder;
@@ -21,7 +19,6 @@ public class ARM extends Architecture {
 
 	private static final SyscallDecoder syscallDecoder = new ARMSyscallDecoder();
 	private static final CallDecoder callDecoder = new ARMCallDecoder();
-	private static final EventParser eventParser = new ARMEventParser();
 
 	@Override
 	public short getId() {
@@ -41,11 +38,6 @@ public class ARM extends Architecture {
 	@Override
 	public ArchTraceReader getTraceReader(InputStream in) {
 		return new ARMTraceReader(in);
-	}
-
-	@Override
-	public EventParser getEventParser() {
-		return eventParser;
 	}
 
 	@Override

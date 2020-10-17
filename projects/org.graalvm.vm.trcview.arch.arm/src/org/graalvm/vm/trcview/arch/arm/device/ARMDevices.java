@@ -8,7 +8,6 @@ import org.graalvm.vm.trcview.analysis.device.FXFieldFormat;
 import org.graalvm.vm.trcview.analysis.device.FieldFormat;
 import org.graalvm.vm.trcview.analysis.device.FieldNumberType;
 import org.graalvm.vm.trcview.analysis.device.IntegerFieldFormat;
-import org.graalvm.vm.trcview.arch.arm.ARM;
 import org.graalvm.vm.trcview.arch.arm.device.event.ge.G3SwapBuffers;
 import org.graalvm.vm.trcview.arch.arm.device.event.ge.G3Viewport;
 import org.graalvm.vm.trcview.arch.arm.io.ARMDeviceRegisterEvent;
@@ -110,7 +109,7 @@ public class ARMDevices {
 	public static final int GXFIFO = 40;
 
 	public static DeviceDefinitionEvent createDevices() {
-		DeviceDefinitionEvent evt = new DeviceDefinitionEvent(ARM.ID);
+		DeviceDefinitionEvent evt = new DeviceDefinitionEvent();
 		Device cpu = new Device(CPU, "ARM946E-S", DeviceType.PROCESSOR);
 
 		Device memctl = new Device(MEMCTL, "Memory Control", DeviceType.MEMORY);

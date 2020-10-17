@@ -4,10 +4,10 @@ import java.io.IOException;
 
 import org.graalvm.vm.util.BitTest;
 import org.graalvm.vm.util.io.WordInputStream;
-import org.graalvm.vm.util.io.WordOutputStream;
 
 public class ARMCpuDeltaState extends ARMCpuState {
 	private static final int MASK_CPSR = 1;
+	private static final int RMASK_PC = 1 << 15;
 
 	private final ARMCpuState lastState;
 	private final int cpsr;
@@ -40,10 +40,19 @@ public class ARMCpuDeltaState extends ARMCpuState {
 
 		int count = Integer.bitCount(Short.toUnsignedInt(rmask));
 		if(count == 0) {
-			return new ARMCpuTinyDeltaState(state, cpsr, code, step);
+			return new ARMCpuNullDeltaState(state, cpsr, code, step);
 		} else if(count == 1) {
 			int value = in.read32bit();
-			return new ARMCpuSmallDeltaState(state, cpsr, code, step,
+			if(BitTest.test(mask, RMASK_PC)) {
+				return new ARMCpuTinyDeltaState(state, value, cpsr, code, step);
+			} else {
+				return new ARMCpuTinyTargetDeltaState(state, cpsr, code, step,
+						(byte) Integer.numberOfTrailingZeros(rmask), value);
+			}
+		} else if(count == 2 && BitTest.test(rmask, RMASK_PC)) {
+			int value = in.read32bit();
+			int pc = in.read32bit();
+			return new ARMCpuSmallDeltaState(state, pc, cpsr, code, step,
 					(byte) Integer.numberOfTrailingZeros(rmask), value);
 		} else {
 			int[] data = new int[count];
@@ -87,10 +96,5 @@ public class ARMCpuDeltaState extends ARMCpuState {
 	@Override
 	public long getStep() {
 		return step;
-	}
-
-	@Override
-	protected void writeRecord(WordOutputStream out) throws IOException {
-		// TODO Auto-generated method stub
 	}
 }

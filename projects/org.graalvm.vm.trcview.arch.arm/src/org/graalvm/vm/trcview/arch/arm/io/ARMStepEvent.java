@@ -1,8 +1,5 @@
 package org.graalvm.vm.trcview.arch.arm.io;
 
-import java.io.IOException;
-
-import org.graalvm.vm.posix.elf.Elf;
 import org.graalvm.vm.trcview.arch.arm.ARM;
 import org.graalvm.vm.trcview.arch.arm.disasm.ARMv5Disassembler;
 import org.graalvm.vm.trcview.arch.arm.disasm.Cpsr;
@@ -10,17 +7,16 @@ import org.graalvm.vm.trcview.arch.io.InstructionType;
 import org.graalvm.vm.trcview.arch.io.StepEvent;
 import org.graalvm.vm.trcview.arch.io.StepFormat;
 import org.graalvm.vm.util.io.Endianess;
-import org.graalvm.vm.util.io.WordOutputStream;
 
 public abstract class ARMStepEvent extends StepEvent {
-	private int overrideType;
+	private byte overrideType;
 
 	protected ARMStepEvent(int tid) {
-		super(Elf.EM_ARM, tid);
+		super(tid);
 	}
 
 	void setTypeOverride(int override) {
-		overrideType = override;
+		overrideType = (byte) override;
 	}
 
 	@Override
@@ -78,10 +74,5 @@ public abstract class ARMStepEvent extends StepEvent {
 	@Override
 	public StepFormat getFormat() {
 		return ARM.FORMAT;
-	}
-
-	@Override
-	protected void writeRecord(WordOutputStream out) throws IOException {
-		// TODO Auto-generated method stub
 	}
 }
